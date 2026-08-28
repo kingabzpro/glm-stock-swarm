@@ -23,16 +23,14 @@ research signal.
 </p>
 
 > [!CAUTION]
-> **Research only—not financial advice.** Model output and third-party data can be incomplete, delayed, or wrong. Never trade solely from this application.
+> **Research only, not financial advice.** Model output and third-party data can be incomplete, delayed, or wrong. Never trade solely from this application.
 
 ## Why GLM Stock Swarm?
 
-- **Four focused agents** instead of one oversized prompt.
-- **Real market evidence** from Finnhub and recent-news research from Tavily.
-- **Deterministic indicators** calculated locally with pandas and NumPy.
-- **Grounded follow-ups** answered only from the completed research report.
-- **Fast local workflow** through a compact, keyboard-friendly Textual interface.
-- **Reproducible setup** with uv, Python 3.13, and a committed lockfile.
+- **Four focused agents** for fundamentals, technicals, news, and synthesis.
+- **Real evidence** from market APIs plus locally calculated indicators.
+- **Grounded follow-ups** constrained to the completed report.
+- **Compact and reproducible** with Textual, uv, and Python 3.13.
 
 ## How it works
 
@@ -53,9 +51,9 @@ flowchart LR
     P --> Q[Grounded follow-up Q&A]
 ```
 
-The CrewAI workflow runs sequentially so the portfolio manager receives the three
-specialist reports as explicit context. It weighs both bullish and bearish evidence,
-reports missing data, and uses `HOLD` when the evidence is mixed.
+CrewAI runs the specialists sequentially, then gives their reports to the portfolio
+manager for a balanced decision. Missing data is disclosed, and mixed evidence
+defaults to `HOLD`.
 
 ## Quick start
 
@@ -68,10 +66,7 @@ new installation, create keys with each provider:
 |:--|:--|
 | [**Finnhub**](https://finnhub.io/pricing) | Free plan with US coverage and up to 60 API calls per minute |
 | [**Tavily**](https://docs.tavily.com/documentation/api-credits) | 1,000 free API credits every month; no credit card required |
-| [**Z.ai**](https://docs.z.ai/guides/overview/quick-start) | New accounts may receive a small promotional balance for initial API tests, but availability and amount can vary |
-
-> [!TIP]
-> Finnhub and Tavily's free plans are normally enough to try this project. Z.ai's starter credit is much more limited because one stock analysis invokes four agents; it may run out after only a few end-to-end tests.
+| [**Z.ai**](https://docs.z.ai/guides/overview/quick-start) | Limited promotional credit may be available for initial tests; availability varies |
 
 #### Create a local `.env` file
 
@@ -99,24 +94,23 @@ The app loads `.env` automatically. The file is ignored by Git; `.env.example`
 contains placeholders only and is safe to commit.
 
 > [!IMPORTANT]
-> Z.ai's limited starter balance is useful for testing, but a four-agent analysis consumes it quickly. After the first few tests, add at least **$3 of standard API credit** from the [Z.ai billing page](https://z.ai/manage-apikey/billing). The app calls `https://api.z.ai/api/paas/v4/` with `glm-5.3-flash`.
+> Each analysis invokes four agents, so Z.ai's starter credit may last only a few tests. Add at least **$3 of standard API credit** from the [billing page](https://z.ai/manage-apikey/billing). This app uses `glm-5.3-flash` through `https://api.z.ai/api/paas/v4/`.
 
 > [!WARNING]
-> Do **not** use a GLM Coding Plan key or the `/coding/paas/v4` endpoint. Coding Plan quota is limited to supported coding tools and does not cover this stock-analysis workload.
+> Do **not** use a [GLM Coding Plan](https://docs.z.ai/devpack/tool/others) key or `/coding/paas/v4`; that quota does not cover this application.
 
 > [!CAUTION]
 > Never paste real API keys into source files, the notebook, screenshots, issues, or commits. If a key is exposed, revoke it at the provider immediately.
 
 ### 2. Install
 
-This repository uses [uv](https://docs.astral.sh/uv/) for Python, dependency locking,
-installation, and commands. From the project directory:
+Install the locked environment with [uv](https://docs.astral.sh/uv/):
 
 ```powershell
 uv sync
 ```
 
-`uv` reuses the existing `.venv`; you do not need to activate it manually.
+`uv` creates or reuses `.venv`; manual activation is unnecessary.
 
 ### 3. Launch the TUI
 
@@ -139,8 +133,7 @@ use the lower input to ask a grounded follow-up question.
 
 | Component | Responsibility |
 |:--|:--|
-| **Finnhub** | Quotes and company fundamentals |
-| **Yahoo chart response** | Daily-price fallback when Finnhub candles are unavailable |
+| **Finnhub + Yahoo fallback** | Quotes, fundamentals, and daily prices |
 | **pandas + NumPy** | SMA20/50/200, RSI14, MACD, returns, and trend calculations |
 | **Tavily** | Material recent news, dates, and source links |
 | **GLM-5.3-Flash** | Specialist interpretation, synthesis, and report-grounded Q&A |
@@ -185,50 +178,3 @@ uv sync
 uv run python -m unittest discover -s tests -v
 ```
 
-The suite verifies ticker validation, technical indicators, safe billing errors, the
-fixed standard Z.ai endpoint, CrewAI retry behavior, and the interactive TUI flow.
-
-## Troubleshooting
-
-<details>
-<summary><strong>Z.ai returns HTTP 429 / code 1113</strong></summary>
-
-The standard API account has insufficient credit or no eligible resource package.
-Add at least $3 of standard API credit, then retry. Coding Plan credit cannot be used
-for this app.
-
-</details>
-
-<details>
-<summary><strong>The TUI reports a missing environment variable</strong></summary>
-
-Confirm that `ZAI_API_KEY`, `FINNHUB_API_KEY`, and `TAVILY_API_KEY` exist in the same
-terminal session that launches `uv run glm-stock-swarm`, or place them in a local
-`.env` file.
-
-</details>
-
-<details>
-<summary><strong>Finnhub daily candles are unavailable</strong></summary>
-
-The application automatically falls back to Yahoo's public chart response for daily
-prices. Finnhub is still used for live quotes and company fundamentals.
-
-</details>
-
-## References
-
-- [Finnhub pricing and free plan](https://finnhub.io/pricing)
-- [Tavily API credits and pricing](https://docs.tavily.com/documentation/api-credits)
-- [GLM-5.3-Flash overview](https://docs.z.ai/guides/vlm/glm-5.3-flash)
-- [Z.ai standard API pricing](https://docs.z.ai/guides/overview/pricing)
-- [Z.ai API billing](https://z.ai/manage-apikey/billing)
-- [GLM Coding Plan quick start](https://docs.z.ai/devpack/quick-start)
-- [Z.ai supported-tool policy](https://docs.z.ai/devpack/tool/others)
-- [uv documentation](https://docs.astral.sh/uv/)
-- [CrewAI documentation](https://docs.crewai.com/)
-- [Textual documentation](https://textual.textualize.io/)
-
-## License
-
-Released under the [MIT License](LICENSE).
