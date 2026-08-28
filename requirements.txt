@@ -1,0 +1,14 @@
+crewai==1.15.18
+crewai-tools==1.15.18
+finnhub-python==2.4.29
+tavily-python==0.8.0
+openai==2.54.0
+pandas==3.0.5
+numpy==2.5.2
+requests==2.34.2
+python-dotenv==1.2.3
+jupyter==1.1.1
+nbclient==0.11.0
+nbformat==5.11.1
+ipykernel==7.3.0
+textual==8.2.8
