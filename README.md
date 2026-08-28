@@ -133,7 +133,8 @@ use the lower input to ask a grounded follow-up question.
 
 | Component | Responsibility |
 |:--|:--|
-| **Finnhub + Yahoo fallback** | Quotes, fundamentals, and daily prices |
+| **Finnhub** | Current quotes and company fundamentals |
+| **Yahoo public chart** | Daily prices used for technical indicators |
 | **pandas + NumPy** | SMA20/50/200, RSI14, MACD, returns, and trend calculations |
 | **Tavily** | Material recent news, dates, and source links |
 | **GLM-5.3-Flash** | Specialist interpretation, synthesis, and report-grounded Q&A |
@@ -177,4 +178,3 @@ uv sync
 ```powershell
 uv run python -m unittest discover -s tests -v
 ```
-

@@ -117,38 +117,6 @@ class MarketData:
         self.http = requests.Session()
         self.http.headers.update({"User-Agent": "glm-stock-swarm/1.0"})
 
-    def _finnhub_history(self, ticker: str, days: int) -> pd.DataFrame:
-        end = int(time.time())
-        start = end - days * 24 * 60 * 60
-        response = self.http.get(
-            "https://finnhub.io/api/v1/stock/candle",
-            params={
-                "symbol": ticker,
-                "resolution": "D",
-                "from": start,
-                "to": end,
-                "token": os.environ["FINNHUB_API_KEY"],
-            },
-            timeout=30,
-        )
-        if response.status_code != 200:
-            return pd.DataFrame()
-        data = response.json()
-        if data.get("s") != "ok":
-            return pd.DataFrame()
-        frame = pd.DataFrame(
-            {
-                "date": pd.to_datetime(data["t"], unit="s", utc=True).tz_localize(None),
-                "open": data["o"],
-                "high": data["h"],
-                "low": data["l"],
-                "close": data["c"],
-                "volume": data["v"],
-            }
-        )
-        frame.attrs["source"] = "Finnhub daily candles"
-        return frame
-
     def _yahoo_history(self, ticker: str, days: int) -> pd.DataFrame:
         end = int(time.time())
         start = end - days * 24 * 60 * 60
@@ -185,14 +153,11 @@ class MarketData:
             .sort_values("date")
             .reset_index(drop=True)
         )
-        frame.attrs["source"] = (
-            "Yahoo public chart fallback (Finnhub candles unavailable)"
-        )
+        frame.attrs["source"] = "Yahoo public chart"
         return frame
 
     def price_history(self, ticker: str, days: int = 450) -> pd.DataFrame:
-        frame = self._finnhub_history(ticker, days)
-        return frame if not frame.empty else self._yahoo_history(ticker, days)
+        return self._yahoo_history(ticker, days)
 
     @staticmethod
     def _number(value: object, decimals: int = 2) -> str:

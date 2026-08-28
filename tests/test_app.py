@@ -12,6 +12,7 @@ from openai import RateLimitError
 from textual.widgets import Button, Input, Label, Markdown, Static
 
 from stock_swarm import (
+    MarketData,
     add_indicators,
     analyze_stock,
     build_crew,
@@ -39,6 +40,16 @@ class CoreTests(unittest.TestCase):
         result = add_indicators(frame)
         self.assertFalse(pd.isna(result.iloc[-1]["SMA200"]))
         self.assertGreater(result.iloc[-1]["MACD"], 0)
+
+    def test_price_history_uses_yahoo_directly(self) -> None:
+        market_data = MarketData.__new__(MarketData)
+        expected = pd.DataFrame({"close": [100.0]})
+        with patch.object(
+            market_data, "_yahoo_history", return_value=expected
+        ) as yahoo_history:
+            result = market_data.price_history("NVDA", days=300)
+        yahoo_history.assert_called_once_with("NVDA", 300)
+        self.assertIs(result, expected)
 
     def test_agents_do_not_retry_failed_paid_requests(self) -> None:
         keys = {
