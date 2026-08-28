@@ -5,6 +5,7 @@ from __future__ import annotations
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal
+from textual.timer import Timer
 from textual.widgets import (
     Button,
     Footer,
@@ -16,14 +17,19 @@ from textual.widgets import (
     Static,
 )
 
-from stock_swarm import analyze_stock, answer_follow_up, validate_ticker
+from stock_swarm import (
+    analyze_stock,
+    answer_follow_up,
+    validate_environment,
+    validate_ticker,
+)
 
 
 class StockSwarmApp(App[None]):
     """Research stocks and discuss each report from the terminal."""
 
     TITLE = "GLM Stock Swarm"
-    SUB_TITLE = "GLM-5.3-Flash · CrewAI · Finnhub · Tavily"
+    SUB_TITLE = ""
 
     CSS = """
     Screen {
@@ -36,20 +42,9 @@ class StockSwarmApp(App[None]):
         color: #80d8ff;
     }
 
-    #app-title {
-        text-style: bold;
-        color: #80d8ff;
-        padding: 1 2 0 2;
-    }
-
-    #tagline {
-        color: #8fa9c9;
-        padding: 0 2 1 2;
-    }
-
     .control-row {
         height: 3;
-        margin: 0 2;
+        margin: 0 1;
     }
 
     Input {
@@ -72,22 +67,31 @@ class StockSwarmApp(App[None]):
     }
 
     Button {
-        min-width: 16;
+        width: 12;
+        min-width: 12;
+        height: 3;
+        margin-left: 1;
         background: #146c94;
         color: white;
-        border: none;
+        border: tall #2498c7;
+        content-align: center middle;
+        text-style: bold;
     }
 
     Button:hover {
         background: #1f95c8;
+        border: tall #80d8ff;
+    }
+
+    Button:disabled {
+        background: #102a40;
+        color: #58738d;
+        border: tall #183b57;
     }
 
     #status-row {
-        height: 3;
-        margin: 0 2;
-        padding: 0 1;
-        background: #0c1c33;
-        border: round #284b75;
+        height: 1;
+        margin: 0 1;
         content-align: left middle;
     }
 
@@ -98,21 +102,29 @@ class StockSwarmApp(App[None]):
 
     #spinner {
         display: none;
-        width: 5;
+        width: 4;
         height: 1;
+    }
+
+    #agent-track {
+        display: none;
+        height: 1;
+        margin: 0 1;
+        color: #8fa9c9;
+        content-align: left middle;
     }
 
     #report {
         height: 1fr;
-        margin: 1 2;
-        padding: 1 2;
+        margin: 0 1;
+        padding: 0 1;
         background: #0a1729;
-        border: round #284b75;
+        border: solid #284b75;
         overflow-y: auto;
     }
 
     #disclaimer {
-        height: 2;
+        height: 1;
         color: #718aa8;
         content-align: center middle;
     }
@@ -134,47 +146,54 @@ class StockSwarmApp(App[None]):
         self.current_report = ""
         self.conversation = ""
         self.busy = False
+        self.analysis_active = False
+        self.agent_stage = 0
+        self.animation_frame = 0
+        self.animation_timer: Timer | None = None
 
     def compose(self) -> ComposeResult:
         yield Header()
-        yield Static("Multi-Agent Stock Analyst", id="app-title")
-        yield Static(
-            "Fundamentals + technicals + current news → evidence-based signal",
-            id="tagline",
-        )
         with Horizontal(classes="control-row"):
             yield Input(
                 value="NVDA",
-                placeholder="Ticker, for example NVDA",
+                placeholder="Ticker (NVDA)",
                 id="ticker-input",
                 max_length=10,
             )
-            yield Button("Run research", id="analyze-button", variant="primary")
+            yield Button("Analyze", id="analyze-button", variant="primary")
         with Horizontal(id="status-row"):
-            yield Label("Ready. Enter a ticker and run the research crew.", id="status")
+            yield Label("Ready · Enter a ticker and press Analyze", id="status")
             yield LoadingIndicator(id="spinner")
+        yield Static("", id="agent-track")
         yield Markdown(
-            "# Ready\n\nEnter a ticker above to start the four-agent analysis.",
+            "**Ready.** Enter a ticker to start the four-agent analysis.",
             id="report",
         )
         with Horizontal(classes="control-row"):
             yield Input(
-                placeholder="Ask a follow-up about the completed report",
+                placeholder="Ask about this report",
                 id="question-input",
                 disabled=True,
             )
-            yield Button("Ask GLM", id="ask-button", disabled=True)
-        yield Static(
-            "Educational research only · Not financial advice", id="disclaimer"
-        )
+            yield Button("Ask", id="ask-button", disabled=True)
+        yield Static("Research only · Not financial advice", id="disclaimer")
         yield Footer()
 
     def on_mount(self) -> None:
+        try:
+            validate_environment()
+            self._set_status("Ready · Enter a ticker and press Analyze")
+        except (EnvironmentError, ValueError) as exc:
+            self._set_status(f"Configuration error: {exc}")
+        self.animation_timer = self.set_interval(
+            0.35, self._animate_busy, pause=True
+        )
         self.query_one("#ticker-input", Input).focus()
 
     def _set_busy(self, busy: bool) -> None:
         self.busy = busy
-        self.query_one("#analyze-button", Button).disabled = busy
+        analyze_button = self.query_one("#analyze-button", Button)
+        analyze_button.disabled = busy
         self.query_one("#ticker-input", Input).disabled = busy
         self.query_one("#ask-button", Button).disabled = busy or not bool(
             self.current_report
@@ -183,6 +202,54 @@ class StockSwarmApp(App[None]):
             self.current_report
         )
         self.query_one("#spinner", LoadingIndicator).display = busy
+        if busy:
+            self.animation_frame = 0
+            if self.animation_timer:
+                self.animation_timer.resume()
+        else:
+            analyze_button.label = "Analyze"
+            self.query_one("#ask-button", Button).label = "Ask"
+            if self.animation_timer:
+                self.animation_timer.pause()
+
+    def _animate_busy(self) -> None:
+        if not self.busy:
+            return
+        self.animation_frame = (self.animation_frame + 1) % 4
+        spinner = ("◐", "◓", "◑", "◒")[self.animation_frame]
+        if self.analysis_active:
+            self.query_one("#analyze-button", Button).label = f"Analyze {spinner}"
+            self._render_agent_track()
+        else:
+            self.query_one("#ask-button", Button).label = f"Ask {spinner}"
+
+    def _render_agent_track(self) -> None:
+        track = self.query_one("#agent-track", Static)
+        labels = ("Fundamentals", "Technicals", "News", "Decision")
+        active_icons = ("◉", "◎")
+        parts = []
+        for index, label in enumerate(labels):
+            if index < self.agent_stage:
+                parts.append(f"[green]●[/] {label}")
+            elif index == self.agent_stage and self.agent_stage < len(labels):
+                icon = active_icons[self.animation_frame % len(active_icons)]
+                parts.append(f"[bold cyan]{icon} {label}[/]")
+            else:
+                parts.append(f"[dim]○ {label}[/]")
+        track.update("  ".join(parts))
+        track.display = True
+
+    def _agent_status(self, message: str) -> None:
+        self._set_status(message)
+        if message.startswith("Fundamentals complete"):
+            self.agent_stage = 1
+        elif message.startswith("Technicals complete"):
+            self.agent_stage = 2
+        elif message.startswith("News complete"):
+            self.agent_stage = 3
+        elif message.startswith("Final report complete"):
+            self.agent_stage = 4
+        self._render_agent_track()
 
     def _set_status(self, message: str) -> None:
         self.query_one("#status", Label).update(message)
@@ -210,25 +277,33 @@ class StockSwarmApp(App[None]):
 
     @work(exclusive=True, group="analysis", exit_on_error=False)
     async def run_analysis(self, ticker: str) -> None:
+        self.analysis_active = True
+        self.agent_stage = 0
         self._set_busy(True)
+        self._render_agent_track()
         self.current_ticker = ticker
         self.current_report = ""
         self.conversation = ""
         await self.query_one("#report", Markdown).update(
-            f"# Researching {ticker}\n\nThe four-agent crew is collecting evidence…"
+            f"## Researching {ticker}\n\nCollecting fundamentals, technicals, and news…"
         )
         try:
             self._set_status(f"Building the {ticker} research crew...")
             report = await analyze_stock(
                 ticker,
-                lambda message: self.call_from_thread(self._set_status, message),
+                lambda message: self.call_from_thread(self._agent_status, message),
             )
             self.current_report = report
+            self.agent_stage = 4
+            self._render_agent_track()
             await self.query_one("#report", Markdown).update(report)
             self._set_status(f"{ticker} report complete. You can ask a follow-up.")
             self.notify(f"{ticker} research complete", title="GLM Stock Swarm")
         except Exception as exc:
             self._set_status(f"Analysis failed: {exc}")
+            self.query_one("#agent-track", Static).update(
+                "[red]● Analysis stopped[/]"
+            )
             await self.query_one("#report", Markdown).update(
                 "# Analysis failed\n\n"
                 f"{exc}\n\nCheck the API variables and your network connection."
@@ -236,6 +311,7 @@ class StockSwarmApp(App[None]):
             self.notify(str(exc), severity="error", title="Analysis failed")
         finally:
             self._set_busy(False)
+            self.analysis_active = False
 
     def _ask_question(self) -> None:
         question = self.query_one("#question-input", Input).value.strip()
@@ -254,8 +330,10 @@ class StockSwarmApp(App[None]):
 
     @work(exclusive=True, group="follow-up", exit_on_error=False)
     async def run_follow_up(self, question: str) -> None:
+        self.analysis_active = False
         self._set_busy(True)
-        self._set_status("GLM-5.3-Flash is reviewing the report…")
+        self.query_one("#ask-button", Button).label = "Ask ◐"
+        self._set_status("Reviewing the report…")
         try:
             answer = await answer_follow_up(
                 self.current_ticker, self.current_report, question
@@ -283,11 +361,12 @@ class StockSwarmApp(App[None]):
         self.current_report = ""
         self.conversation = ""
         self.query_one("#question-input", Input).value = ""
+        self.query_one("#agent-track", Static).display = False
         await self.query_one("#report", Markdown).update(
-            "# Ready\n\nEnter a ticker above to start the four-agent analysis."
+            "**Ready.** Enter a ticker to start the four-agent analysis."
         )
         self._set_busy(False)
-        self._set_status("Cleared. Ready for a new ticker.")
+        self._set_status("Cleared · Enter a ticker and press Analyze")
         self.query_one("#ticker-input", Input).focus()
 
 

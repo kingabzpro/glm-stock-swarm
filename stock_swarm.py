@@ -7,6 +7,7 @@ import re
 import time
 import warnings
 from collections.abc import Callable
+from dataclasses import dataclass
 
 import finnhub
 import numpy as np
@@ -21,6 +22,8 @@ from openai import AsyncOpenAI, RateLimitError
 REQUIRED_ENV_VARS = ("ZAI_API_KEY", "FINNHUB_API_KEY", "TAVILY_API_KEY")
 TICKER_PATTERN = re.compile(r"[A-Z][A-Z0-9.-]{0,9}")
 StatusCallback = Callable[[str], None]
+ZAI_BASE_URL = "https://api.z.ai/api/paas/v4/"
+ZAI_API_MODEL = "glm-5.3-flash"
 
 load_dotenv()
 os.environ.setdefault("CREWAI_TRACING_ENABLED", "false")
@@ -32,13 +35,44 @@ warnings.filterwarnings(
 )
 
 
+@dataclass(frozen=True)
+class LLMSettings:
+    """Standard Z.ai API configuration without exposing its credential."""
+
+    base_url: str
+    api_key: str
+    api_model: str
+    crewai_model: str
+
+
+def resolve_llm_settings() -> LLMSettings:
+    """Return the fixed GLM-5.3-Flash configuration for Z.ai's standard API."""
+    zai_key = os.getenv("ZAI_API_KEY", "").strip()
+    if not zai_key:
+        raise EnvironmentError(
+            "Missing ZAI_API_KEY. Use a standard Z.ai API key and add at least "
+            "$3 API credit; Coding Plan keys are not supported."
+        )
+    return LLMSettings(
+        base_url=ZAI_BASE_URL,
+        api_key=zai_key,
+        api_model=ZAI_API_MODEL,
+        crewai_model=f"openai/{ZAI_API_MODEL}",
+    )
+
+
 def validate_environment() -> None:
     """Raise a safe error when a required credential is unavailable."""
     missing = [name for name in REQUIRED_ENV_VARS if not os.getenv(name)]
     if missing:
-        raise EnvironmentError(
-            "Missing required environment variables: " + ", ".join(missing)
-        )
+        message = "Missing required environment variables: " + ", ".join(missing)
+        if "ZAI_API_KEY" in missing:
+            message += (
+                ". Use a standard Z.ai API key with at least $3 API credit; "
+                "Coding Plan keys are not supported"
+            )
+        raise EnvironmentError(message)
+    resolve_llm_settings()
 
 
 def validate_ticker(ticker: str) -> str:
@@ -228,8 +262,9 @@ def _rate_limit_message(exc: RateLimitError) -> str:
     detail = str(exc).lower()
     if "insufficient balance" in detail or "no resource package" in detail:
         return (
-            "Z.ai has insufficient balance for this request. Recharge the account "
-            "or add a GLM resource package, then try again."
+            "Z.ai has insufficient balance for this request. Add at least $3 API "
+            "credit to the standard API account, then try again. The Coding Plan "
+            "does not cover this app."
         )
     return "Z.ai rate-limited the request. Wait briefly, then try again."
 
@@ -239,6 +274,7 @@ def build_crew(ticker: str, status: StatusCallback | None = None) -> Crew:
     validate_environment()
     ticker = validate_ticker(ticker)
     market_data = MarketData()
+    llm_settings = resolve_llm_settings()
 
     @tool("Get Stock Fundamentals")
     def get_fundamentals(symbol: str) -> str:
@@ -257,12 +293,13 @@ def build_crew(ticker: str, status: StatusCallback | None = None) -> Crew:
         days=30,
         max_results=5,
     )
-    llm = LLM(
-        model="openai/glm-5.3-flash",
-        api_key=os.environ["ZAI_API_KEY"],
-        base_url="https://api.z.ai/api/paas/v4/",
-        temperature=0.1,
-    )
+    llm_options = {
+        "model": llm_settings.crewai_model,
+        "api_key": llm_settings.api_key,
+        "base_url": llm_settings.base_url,
+        "temperature": 0.1,
+    }
+    llm = LLM(**llm_options)
 
     fundamental_agent = Agent(
         role="Fundamental Analyst",
@@ -407,34 +444,38 @@ async def answer_follow_up(ticker: str, report: str, question: str) -> str:
     if not report.strip():
         raise ValueError("Run a stock analysis before asking a follow-up question.")
 
+    llm_settings = resolve_llm_settings()
     client = AsyncOpenAI(
-        api_key=os.environ["ZAI_API_KEY"],
-        base_url="https://api.z.ai/api/paas/v4/",
+        api_key=llm_settings.api_key,
+        base_url=llm_settings.base_url,
     )
+    completion_options = {
+        "model": llm_settings.api_model,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    f"You are the portfolio manager for {ticker}. Answer only from "
+                    "the supplied research report. Clearly say when the report does "
+                    "not contain enough evidence. Be concise and never present the "
+                    "answer as personalized financial advice."
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"RESEARCH REPORT\n{report}\n\nQUESTION\n{question}",
+            },
+        ],
+        "temperature": 0.1,
+        "max_tokens": 1200,
+    }
     try:
-        response = await client.chat.completions.create(
-            model="glm-5.3-flash",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        f"You are the portfolio manager for {ticker}. Answer only from "
-                        "the supplied research report. Clearly say when the report does "
-                        "not contain enough evidence. Be concise and never present the "
-                        "answer as personalized financial advice."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": f"RESEARCH REPORT\n{report}\n\nQUESTION\n{question}",
-                },
-            ],
-            temperature=0.1,
-            max_tokens=1200,
-        )
+        response = await client.chat.completions.create(**completion_options)
     except RateLimitError as exc:
         raise RuntimeError(_rate_limit_message(exc)) from None
     answer = (response.choices[0].message.content or "").strip()
+    if "</think>" in answer:
+        answer = answer.split("</think>", 1)[1].strip()
     if not answer:
         raise RuntimeError("GLM-5.3-Flash returned an empty follow-up answer.")
     return answer
