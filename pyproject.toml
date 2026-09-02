@@ -3,6 +3,7 @@ name = "glm-stock-swarm"
 version = "0.1.0"
 description = "A local multi-agent stock analyst powered by GLM-5.3-Flash and CrewAI."
 readme = "README.md"
+license = "Apache-2.0"
 requires-python = ">=3.13,<3.14"
 dependencies = [
     "crewai==1.15.18",

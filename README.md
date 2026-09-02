@@ -10,7 +10,7 @@
 [![CrewAI](https://img.shields.io/badge/orchestration-CrewAI-FF5A50)](https://www.crewai.com/)
 [![Textual](https://img.shields.io/badge/interface-Textual-2498C7)](https://textual.textualize.io/)
 [![Tests](https://img.shields.io/badge/tests-8%20passing-2EA44F)](#testing)
-[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
 GLM-5.3-Flash and CrewAI coordinate fundamental, technical, and recent-news
 specialists before a portfolio manager produces a sourced `BUY`, `HOLD`, or `SELL`
@@ -161,6 +161,7 @@ glm-stock-swarm/
 ├── stock_analyst_crew.ipynb    # Guided notebook workflow
 ├── pyproject.toml              # Project metadata and pinned direct dependencies
 ├── uv.lock                     # Reproducible dependency graph
+├── LICENSE                     # Apache License 2.0 terms
 └── tests/test_app.py           # Core and Textual integration tests
 ```
 
@@ -178,3 +179,7 @@ uv sync
 ```powershell
 uv run python -m unittest discover -s tests -v
 ```
+
+## License
+
+Licensed under the [Apache License 2.0](LICENSE).
